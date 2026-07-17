@@ -1,20 +1,36 @@
 import bge
 import random
 import aud
+import math
+import mathutils
 
 ACTION_LAYER = 0  # matches the action actuator layer
 FIRE_SOUND_NAMES = ["glock_fire_0.wav", "glock_fire_1.wav", "glock_fire_2.wav"]
 
 # default weapon settings (can be overridden with game properties)
-DEFAULT_FIRE_RATE = 8.0         # shots per second
+DEFAULT_FIRE_RATE = 100.0         # shots per second
 DEFAULT_BLENDIN = 3             # animation blend frames
 DEFAULT_PITCH_VARIATION = 0.03  # +/- pitch variation
 DEFAULT_ANIM_SPEED = 1.5        # can be overridden with "fire_anim_speed"
 DEFAULT_MAG_SIZE = 15           # shots per magazine before reload is required
+DEFAULT_MUZZLE_NAME = "muzzle"  # can be overridden with "muzzle_object"
 
 # shared audio device and cached sound factories
 _audio_device = aud.Device()
 _fire_factories_cache = {}
+_muzzle_base_orientation_cache = {}
+
+
+def get_muzzle_base_orientation(muzzle_obj):
+    """Capture the muzzle's original resting orientation the first time
+    we see it, so later spins can be applied on TOP of it instead of
+    overwriting it (which was making the plane face edge-on / disappear)."""
+    key = id(muzzle_obj)
+    base = _muzzle_base_orientation_cache.get(key)
+    if base is None:
+        base = muzzle_obj.localOrientation.copy()
+        _muzzle_base_orientation_cache[key] = base
+    return base
 
 
 def get_fire_factories(cont, obj):
@@ -94,6 +110,18 @@ def main():
     if mag_size <= 0:
         mag_size = DEFAULT_MAG_SIZE  # guard against a broken/empty magazine setup
 
+    # muzzle flash object: driven entirely from here so it only reacts to a
+    # REAL shot, never to reload or an empty trigger pull
+    muzzle_name = obj.get("muzzle_object", DEFAULT_MUZZLE_NAME)
+    scene = bge.logic.getCurrentScene()
+    muzzle_obj = scene.objects.get(muzzle_name)
+    if muzzle_obj is None and not obj.get("_muzzle_warned", False):
+        print(
+            "[weapon_fire] Aviso: no se encontró el objeto muzzle '{}' en la "
+            "escena. El destello de disparo no se mostrará.".format(muzzle_name)
+        )
+        obj["_muzzle_warned"] = True
+
     # smooth animation restart
     try:
         act_fire.blendin = blendin
@@ -155,6 +183,30 @@ def main():
                 last_fire_idx = idx
             next_fire_time = now + (1.0 / fire_rate)
             ammo -= 1  # consume one round per shot
+
+            # muzzle flash: random spin around its own face-normal axis +
+            # trigger its animation. Only reached on a confirmed, successful
+            # shot. The rotation axis is configurable because it depends on
+            # how the muzzle plane's local axes are oriented -- rotating
+            # around an axis that lies IN the plane (instead of perpendicular
+            # to its face) makes it look like a door swinging/foreshortening
+            # instead of spinning flat. Default "Z" matches a standard
+            # Blender plane, whose local normal is +Z.
+            if muzzle_obj is not None:
+                axis = str(obj.get("muzzle_rotation_axis", "Z")).upper()
+                if axis not in ("X", "Y", "Z"):
+                    axis = "Z"
+                angle = random.uniform(0.0, 2.0 * math.pi)
+                base_orn = get_muzzle_base_orientation(muzzle_obj)
+                spin = mathutils.Matrix.Rotation(angle, 3, axis)
+                # apply the spin ON TOP of the muzzle's original resting
+                # orientation, instead of replacing it -- this keeps it
+                # facing the right way instead of going edge-on/invisible
+                muzzle_obj.localOrientation = base_orn @ spin
+                # toggle a bool property; the muzzle's own Property sensor
+                # (evaluation type "Changed") fires exactly once per toggle,
+                # so this reliably pulses the muzzle's Action actuator
+                muzzle_obj["fire_trigger"] = not muzzle_obj.get("fire_trigger", False)
 
         elif fire_pressed and ammo <= 0:
             # empty magazine: play a dry-fire click instead of a shot,
