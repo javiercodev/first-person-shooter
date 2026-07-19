@@ -44,7 +44,7 @@ def get_step_factories(cont, obj):
                 factories.append(actuator.sound)
             else:
                 print(
-                    "[player_movement] Aviso: falta el actuador de sonido '{}' "
+                    "[character_movement] Aviso: falta el actuador de sonido '{}' "
                     "en '{}' (o no tiene sonido asignado); se ignora.".format(
                         name, obj.name
                     )
@@ -167,6 +167,8 @@ def main():
 
     obj["next_step_time"] = next_step_time
     obj["last_step_sound_idx"] = last_step_idx
+    obj["is_moving"] = is_moving  # exposed so other scripts (e.g. the weapon) can react to it
+    obj["is_moving"] = is_moving  # exposed so other scripts (e.g. the weapon) can react to it
 
 
 main()
