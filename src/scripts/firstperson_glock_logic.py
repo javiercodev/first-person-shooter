@@ -17,7 +17,7 @@ WALK_END_FRAME = 282     # final resting frame
 
 FIRE_SOUND_NAMES = ["glock_fire_0.wav", "glock_fire_1.wav", "glock_fire_2.wav"]
 
-# default weapon settings (can be overridden with game properties)
+# CONFIGURATION
 DEFAULT_FIRE_RATE = 100.0       # shots per second
 DEFAULT_BLENDIN = 3             # animation blend frames
 DEFAULT_PITCH_VARIATION = 0.03  # +/- pitch variation
