@@ -11,6 +11,8 @@ RUN_ACTION = "action_zombie_run"
 RUN_START = 0
 RUN_END = 48
 DEFAULT_PLAYER_NAME = "firstperson_character"  # can be overridden with "player_object"
+DEFAULT_ANIM_OBJECT_NAME = "zombie_smoke"      # the mesh/object that receives playAction calls;
+                                                 # can be overridden with "zombie_anim_object"
 DEFAULT_DETECTION_RADIUS = 15.0                 # can be overridden with "detection_radius"
 DEFAULT_BLENDIN = 8                             # blend frames when switching animation,
                                                   # can be overridden with "zombie_blendin"
@@ -48,6 +50,9 @@ DEFAULT_REAR_DETECTION_RADIUS = 3.0  # distance at which the zombie notices the 
 
 def main():
     cont = bge.logic.getCurrentController()
+    # obj es ahora el objeto de LOGICA/MOVIMIENTO (zombie_smoke_character):
+    # es quien se desplaza, gira y detecta al jugador. El controlador
+    # Python debe estar puesto sobre este objeto.
     obj = cont.owner
     scene = bge.logic.getCurrentScene()
 
@@ -55,6 +60,10 @@ def main():
     player_name = obj.get("player_object", DEFAULT_PLAYER_NAME)
     if not player_name:
         player_name = DEFAULT_PLAYER_NAME
+
+    anim_object_name = obj.get("zombie_anim_object", DEFAULT_ANIM_OBJECT_NAME)
+    if not anim_object_name:
+        anim_object_name = DEFAULT_ANIM_OBJECT_NAME
 
     detection_radius = obj.get("detection_radius", DEFAULT_DETECTION_RADIUS)
     if detection_radius <= 0:
@@ -76,6 +85,22 @@ def main():
             )
             obj["_player_warned"] = True
         return
+
+    # ---- locate the animation object ----
+    # el objeto que realmente recibe playAction (zombie_smoke) puede ser
+    # distinto del que se mueve y detecta al jugador (zombie_smoke_character).
+    # esto es util, por ejemplo, cuando el mesh animado es un hijo separado
+    # o un objeto aparte vinculado por nombre, en vez de ser el propio owner.
+    anim_obj = scene.objects.get(anim_object_name)
+    if anim_obj is None:
+        if not obj.get("_anim_obj_warned", False):
+            print(
+                "[zombie_ai] Warning: animation object '{}' not found in "
+                "the scene. The zombie will move but won't play any "
+                "animation.".format(anim_object_name)
+            )
+            obj["_anim_obj_warned"] = True
+        anim_obj = None
 
     # ---- direction/distance toward the player (needed both for fov and movement) ----
     distance = obj.getDistanceTo(player_obj)
@@ -106,32 +131,37 @@ def main():
     target_state = "run" if player_detected else "idle"
 
     # ---- only trigger a new animation if the state actually changed ----
+    # el estado se sigue guardando en obj (el objeto de logica), pero la
+    # animacion en si se reproduce sobre anim_obj (zombie_smoke).
     current_state = obj.get("zombie_state", None)
     if current_state != target_state:
-        if target_state == "run":
-            obj.playAction(
-                RUN_ACTION,
-                RUN_START,
-                RUN_END,
-                layer=ACTION_LAYER,
-                play_mode=bge.logic.KX_ACTION_MODE_LOOP,
-                blendin=blendin,
-            )
-        else:
-            obj.playAction(
-                IDLE_ACTION,
-                IDLE_START,
-                IDLE_END,
-                layer=ACTION_LAYER,
-                play_mode=bge.logic.KX_ACTION_MODE_LOOP,
-                blendin=blendin,
-            )
+        if anim_obj is not None:
+            if target_state == "run":
+                anim_obj.playAction(
+                    RUN_ACTION,
+                    RUN_START,
+                    RUN_END,
+                    layer=ACTION_LAYER,
+                    play_mode=bge.logic.KX_ACTION_MODE_LOOP,
+                    blendin=blendin,
+                )
+            else:
+                anim_obj.playAction(
+                    IDLE_ACTION,
+                    IDLE_START,
+                    IDLE_END,
+                    layer=ACTION_LAYER,
+                    play_mode=bge.logic.KX_ACTION_MODE_LOOP,
+                    blendin=blendin,
+                )
         obj["zombie_state"] = target_state
     # if the state didn't change, we do nothing: upbge's native loop already
     # keeps playing the current animation on its own, no need (and no
     # benefit) to call playaction again every frame.
 
     # ---- chase: move and orient the zombie toward the player ----
+    # el movimiento y el giro se siguen aplicando sobre obj
+    # (zombie_smoke_character), no sobre anim_obj.
     if player_detected:
         dt = 1.0 / bge.logic.getLogicTicRate()
 
